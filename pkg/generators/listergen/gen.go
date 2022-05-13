@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"go/format"
 	"io"
 	"path/filepath"
 	"strings"
@@ -183,6 +184,12 @@ func (g *Generator) generate(ctx *genall.GenerationContext) error {
 				}
 
 				outBytes := outContent.Bytes()
+				formattedBytes, err := format.Source(outBytes)
+				if err != nil {
+					root.AddError(err)
+				} else {
+					outBytes = formattedBytes
+				}
 				if len(outBytes) > 0 {
 					byType[info.Name] = outBytes
 				}
@@ -198,7 +205,6 @@ func (g *Generator) generate(ctx *genall.GenerationContext) error {
 				filename := strings.ToLower(typeName) + util.ExtensionGo
 				err = util.WriteContent(content, filename, filepath.Join(g.outputDir, "listers", gv.Group.PackageName(), string(version.Version)))
 				if err != nil {
-					fmt.Println(err)
 					root.AddError(err)
 				}
 			}
