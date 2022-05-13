@@ -38,10 +38,13 @@ const (
 // This logic is taken from k8.io/code-generator, but has a change of letting user pass the
 // directory whose pacakge is to be found.
 func CurrentPackage(dir string) (string, bool) {
-	goModPath, err := getGoModPath(dir)
+	absPath, err := filepath.Abs(dir)
 	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
+		return "", false
+	}
+	goModPath, err := getGoModPath(absPath)
+	if err != nil {
+		return "", false
 	}
 
 	// hasGoMod returns true if go.mod was found in the parent dir which was
@@ -55,8 +58,7 @@ func CurrentPackage(dir string) (string, bool) {
 
 	gomod, err := ioutil.ReadFile(filepath.Join(goModPath, "go.mod"))
 	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
+		return "", false
 	}
 	return modfile.ModulePath(gomod), hasGoMod
 }
