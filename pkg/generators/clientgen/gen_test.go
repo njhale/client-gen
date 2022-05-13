@@ -35,9 +35,9 @@ var _ = Describe("Test generator funcs", func() {
 		)
 		BeforeEach(func() {
 			f = flag.Flags{}
-			f.InputDir = "test"
+			f.InputDir = "."
 			f.ClientsetAPIPath = "examples"
-			f.OutputDir = "examples"
+			f.OutputDir = "."
 			f.GroupVersions = []string{"apps:v1"}
 
 			g = &Generator{}
@@ -46,9 +46,9 @@ var _ = Describe("Test generator funcs", func() {
 		It("should set defaults correctly", func() {
 			err := g.setDefaults(f)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(g.inputDir).To(Equal("test"))
+			Expect(g.inputDir).To(Equal("."))
 			Expect(g.clientSetAPIPath).To(Equal("examples"))
-			Expect(g.outputDir).To(Equal("examples"))
+			Expect(g.outputDir).To(Equal("."))
 
 			expected := []types.GroupVersions{{
 				PackageName: "apps",
@@ -56,7 +56,7 @@ var _ = Describe("Test generator funcs", func() {
 				Versions: []types.PackageVersion{
 					{
 						Version: types.Version("v1"),
-						Package: "test/pkg/apis/apps/v1",
+						Package: "apps/v1",
 					},
 				},
 			}}
@@ -70,7 +70,7 @@ var _ = Describe("Test generator funcs", func() {
 		)
 		BeforeEach(func() {
 			f = flag.Flags{}
-			f.InputDir = "test"
+			f.InputDir = "."
 			f.GroupVersions = []string{"apps:v1", "rbac:v2"}
 		})
 
@@ -81,7 +81,7 @@ var _ = Describe("Test generator funcs", func() {
 				Versions: []types.PackageVersion{
 					{
 						Version: types.Version("v1"),
-						Package: "test/pkg/apis/apps/v1",
+						Package: "apps/v1",
 					},
 				},
 			}, {
@@ -90,7 +90,7 @@ var _ = Describe("Test generator funcs", func() {
 				Versions: []types.PackageVersion{
 					{
 						Version: types.Version("v2"),
-						Package: "test/pkg/apis/rbac/v2",
+						Package: "rbac/v2",
 					},
 				},
 			}}
@@ -108,7 +108,7 @@ var _ = Describe("Test generator funcs", func() {
 				Versions: []types.PackageVersion{
 					{
 						Version: types.Version("v1"),
-						Package: "test/pkg/apis/apps/v1",
+						Package: "apps/v1",
 					},
 				},
 			}, {
@@ -117,7 +117,7 @@ var _ = Describe("Test generator funcs", func() {
 				Versions: []types.PackageVersion{
 					{
 						Version: types.Version("v2"),
-						Package: "test/pkg/apis/apps/v2",
+						Package: "apps/v2",
 					},
 				},
 			}}
