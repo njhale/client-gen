@@ -286,8 +286,43 @@ func (g *Generator) writeVersionInterface(ctx *genall.GenerationContext, group t
 	if err := g.writeHeader(&out); err != nil {
 		return err
 	}
+	basePkg := g.inputpkgPaths.basePackage
+	if !g.inputpkgPaths.hasGoMod {
+		cleanPkgPath := util.CleanInputDir(g.inputDir)
+		if cleanPkgPath != "" {
+			basePkg = filepath.Join(g.inputpkgPaths.basePackage, cleanPkgPath)
+		}
+	}
+	path := filepath.Join(basePkg, group.String(), version.Version.String())
 
-	t, err := informergen.NewVersionInterface(&out, version.Version.String())
+	pkgs, err := loader.LoadRootsWithConfig(&packages.Config{Dir: g.inputDir}, path)
+	if err != nil {
+		return err
+	}
+
+	// Assign the pkgs obtained from loading roots to generation context.
+	// TODO: Figure out if controller-tools generation runtime can be used to
+	// wire in instead.
+	ctx.Roots = pkgs
+
+	collectedAPIs := []string{}
+	for _, root := range pkgs {
+		root.NeedTypesInfo()
+
+		// this is to accomodate multiple types defined in single group
+		// byType := make(map[string][]byte)
+		if eachTypeErr := markers.EachType(ctx.Collector, root, func(info *markers.TypeInfo) {
+			// if not enabled for this type, skip
+			if !clientgen.IsEnabledForMethod(info) {
+				return
+			}
+			collectedAPIs = append(collectedAPIs, info.Name)
+		}); eachTypeErr != nil {
+			return err
+		}
+	}
+
+	t, err := informergen.NewVersionInterface(&out, version.Version.String(), "TODO", group.String(), version.Version.String(), collectedAPIs)
 	if err != nil {
 		return err
 	}

@@ -19,6 +19,8 @@ package informergen
 import (
 	"io"
 	"text/template"
+
+	"github.com/kcp-dev/code-generator/pkg/util"
 )
 
 type factory struct {
@@ -73,8 +75,17 @@ func NewGroupInterface(w io.Writer, packageName string) (*groupInterface, error)
 }
 
 type versionInterface struct {
-	writer      *io.Writer
-	PackageName string
+	writer       *io.Writer
+	PackageName  string
+	InformerPath string
+	Group        string
+	Version      string
+	APIs         []api
+}
+
+type api struct {
+	Name           string
+	NameLowerFirst string
 }
 
 func (v *versionInterface) WriteContent() error {
@@ -85,8 +96,19 @@ func (v *versionInterface) WriteContent() error {
 	return templ.Execute(*v.writer, v)
 }
 
-func NewVersionInterface(w io.Writer, packageName string) (*versionInterface, error) {
-	return &versionInterface{writer: &w, PackageName: packageName}, nil
+func NewVersionInterface(w io.Writer, packageName, informerPath, group, version string, apiNames []string) (*versionInterface, error) {
+	apis := []api{}
+	for _, apiName := range apiNames {
+		apis = append(apis, api{Name: apiName, NameLowerFirst: util.LowerFirst(apiName)})
+	}
+	return &versionInterface{
+		writer:       &w,
+		PackageName:  packageName,
+		InformerPath: informerPath,
+		Group:        group,
+		Version:      version,
+		APIs:         apis,
+	}, nil
 }
 
 type informer struct {
