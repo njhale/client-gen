@@ -32,17 +32,12 @@ KUBE_CLIENT_GEN_VER := v0.24.0
 KUBE_CLIENT_GEN_BIN := client-gen
 KUBE_CLIENT_GEN := $(GOBIN_DIR)/$(KUBE_CLIENT_GEN_BIN)-$(KUBE_CLIENT_GEN_VER)
 
-KUBE_INFORMER_GEN_BIN := informer-gen
-KUBE_INFORMER_GEN := $(GOBIN_DIR)/$(KUBE_INFORMER_GEN_BIN)-$(KUBE_CLIENT_GEN_VER)
 
 $(CONTROLLER_GEN):
 	GOBIN=$(GOBIN_DIR) $(GO_INSTALL) sigs.k8s.io/controller-tools/cmd/controller-gen $(CONTROLLER_GEN_BIN) $(CONTROLLER_GEN_VER)
 
 $(KUBE_CLIENT_GEN):
 	GOBIN=$(GOBIN_DIR) $(GO_INSTALL) k8s.io/code-generator/cmd/client-gen $(KUBE_CLIENT_GEN_BIN) $(KUBE_CLIENT_GEN_VER)
-
-$(KUBE_INFORMER_GEN):
-	GOBIN=$(GOBIN_DIR) $(GO_INSTALL) k8s.io/code-generator/cmd/informer-gen $(KUBE_INFORMER_GEN_BIN) $(KUBE_CLIENT_GEN_VER)
 
 
 .PHONY: build
@@ -68,15 +63,6 @@ codegen: $(CONTROLLER_GEN) $(KUBE_CLIENT_GEN) $(KUBE_INFORMER_GEN) build
 		--output-base . \
 		--output-package github.com/kcp-dev/code-generator/examples/pkg/generated/clientset \
 		--trim-path-prefix github.com/kcp-dev/code-generator
-
-	$(KUBE_INFORMER_GEN) \
-		--input-dirs github.com/kcp-dev/code-generator/examples/pkg/apis/example/v1 \
-		--versioned-clientset-package github.com/kcp-dev/code-generator/examples/pkg/generated/clientset/versioned \
-		--listers-package github.com/kcp-dev/code-generator/examples/pkg/listers \
-		--output-base . \
-		--trim-path-prefix github.com/kcp-dev/code-generator \
-		--output-package github.com/kcp-dev/code-generator/examples/pkg/generated/informers \
-		--single-directory # omit "externalversion" and "internalversion" subdirectories
 
 	# Generate cluster clientset and listers
 	bin/code-generator \

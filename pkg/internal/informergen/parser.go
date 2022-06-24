@@ -17,7 +17,6 @@ limitations under the License.
 package informergen
 
 import (
-	"fmt"
 	"io"
 	"text/template"
 
@@ -29,51 +28,24 @@ var (
 		"upper": util.UpperFirst,
 		"lower": util.LowerFirst,
 	}
-
-	templates = map[string]string{
-		Factory{}.Name():          factoryTemplate,
-		GenericInformer{}.Name():  genericInformerTemplate,
-		GroupInterface{}.Name():   groupInterfaceTemplate,
-		VersionInterface{}.Name(): versionInterfaceTemplate,
-		Informer{}.Name():         informerTemplate,
-	}
 )
 
-type Parseable interface {
-	Name() string
-}
-
-func WriteContent(w io.Writer, parseable Parseable) error {
-	if w == nil {
-		return fmt.Errorf("nil writer")
-	}
-	if parseable == nil {
-		return fmt.Errorf("nil parseable")
-	}
-
-	name := parseable.Name()
-	tmpl, ok := templates[parseable.Name()]
-	if !ok {
-		return fmt.Errorf("unknown parseable: %s", name)
-	}
-
-	parsed, err := template.New(name).Funcs(templateFuncs).Parse(tmpl)
-	if err != nil {
-		return err
-	}
-
-	return parsed.Execute(w, parseable)
-}
-
-type Factory struct {
-	// TODO
+type factory struct {
 	PackageName               string
 	InformerPackage           string
 	VersionedClientsetPackage string
 }
 
-func (Factory) Name() string {
-	return "factory"
+func (f *factory) WriteContent(w io.Writer) error {
+	templ, err := template.New("factory").Funcs(templateFuncs).Parse(factoryTemplate)
+	if err != nil {
+		return err
+	}
+	return templ.Execute(w, f)
+}
+
+func NewFactory(packageName, informerPackage, versionedClientSetPackage string) *factory {
+	return &factory{PackageName: packageName, InformerPackage: informerPackage, VersionedClientsetPackage: versionedClientSetPackage}
 }
 
 type API struct {
@@ -83,42 +55,77 @@ type API struct {
 	Package string
 }
 
-type GenericInformer struct {
+type genericInformer struct {
 	PackageName string
 	APIs        []API
 }
 
-func (GenericInformer) Name() string {
-	return "genericInformer"
+func (g *genericInformer) WriteContent(w io.Writer) error {
+	templ, err := template.New("generic").Funcs(templateFuncs).Parse(genericInformerTemplate)
+	if err != nil {
+		return err
+	}
+	return templ.Execute(w, g)
 }
 
-type GroupInterface struct {
+func NewGenericInformer(packageName string, apis []API) *genericInformer {
+	return &genericInformer{APIs: apis, PackageName: packageName}
+}
+
+type groupInterface struct {
+	PackageName     string
 	InformerPackage string
 	Group           string
 	Versions        []string
 }
 
-func (GroupInterface) Name() string {
-	return "groupInterface"
+func (g *groupInterface) WriteContent(w io.Writer) error {
+	templ, err := template.New("groupInterface").Funcs(templateFuncs).Parse(groupInterfaceTemplate)
+	if err != nil {
+		return err
+	}
+	return templ.Execute(w, g)
 }
 
-type VersionInterface struct {
+func NewGroupInterface(packageName, informerPackage, group string, versions []string) *groupInterface {
+	return &groupInterface{PackageName: packageName, InformerPackage: informerPackage, Group: group, Versions: versions}
+}
+
+type versionInterface struct {
+	PackageName     string
 	InformerPackage string
 	Group           string
 	Version         string
 	APIs            []API
 }
 
-func (VersionInterface) Name() string {
-	return "versionInterface"
+func (v *versionInterface) WriteContent(w io.Writer) error {
+	templ, err := template.New("versionInterface").Funcs(templateFuncs).Parse(versionInterfaceTemplate)
+	if err != nil {
+		return err
+	}
+	return templ.Execute(w, v)
 }
 
-type Informer struct {
+func NewVersionInterface(packageName, informerPackage, group, version string, apis []API) *versionInterface {
+	return &versionInterface{PackageName: packageName, InformerPackage: informerPackage, Group: group, Version: version, APIs: apis}
+}
+
+type informer struct {
+	PackageName     string
 	InformerPackage string
 	ListerPackage   string
-	API
+	API             API
 }
 
-func (Informer) Name() string {
-	return "informer"
+func (i *informer) WriteContent(w io.Writer) error {
+	templ, err := template.New("informer").Funcs(templateFuncs).Parse(informerTemplate)
+	if err != nil {
+		return err
+	}
+	return templ.Execute(w, i)
+}
+
+func NewInformer(packageName, informerPackage, listerPackage string, api API) *informer {
+	return &informer{PackageName: packageName, InformerPackage: informerPackage, ListerPackage: listerPackage, API: api}
 }

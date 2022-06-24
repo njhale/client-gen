@@ -64,7 +64,7 @@ type Generator struct {
 
 func (g Generator) RegisterMarker() (*markers.Registry, error) {
 	reg := &markers.Registry{}
-	if err := markers.RegisterAll(reg, RuleDefinition, NonNamespacedMarker, NoStatusMarker); err != nil {
+	if err := markers.RegisterAll(reg, clientgen.GenclientMarker, clientgen.NonNamespacedMarker); err != nil {
 		return nil, fmt.Errorf("error registering markers")
 	}
 	return reg, nil
@@ -141,7 +141,7 @@ func (g *Generator) sources(ctx *genall.GenerationContext) (*sources, error) {
 
 	for _, group := range g.groups() {
 		for _, version := range g.versionsFor(group) {
-			path := filepath.Join(g.InputDir, group, version)
+			path := filepath.Join(g.inputDir, group.String(), version)
 			pkgs, err := loader.LoadRootsWithConfig(&packages.Config{
 				Mode: packages.NeedModule | packages.NeedTypesInfo,
 			}, path)
@@ -170,8 +170,8 @@ func (g *Generator) sources(ctx *genall.GenerationContext) (*sources, error) {
 						return
 					}
 
-					srcs.apis[group] = append(sources.apis[group], informergen.API{
-						Group:   group,
+					srcs.apis[group] = append(srcs.apis[group], informergen.API{
+						Group:   group.String(),
 						Version: version,
 						Kind:    info.Name,
 					})
@@ -192,140 +192,117 @@ func (g *Generator) sources(ctx *genall.GenerationContext) (*sources, error) {
 // Then for each type defined in the input, it recursively wraps the subsequent
 // interfaces to be kcp-aware.
 func (g *Generator) generate(ctx *genall.GenerationContext) error {
-	// if err := g.writeFactory(ctx); err != nil {
-	// 	return err
-	// }
-
-	// if err := g.writeGeneric(ctx); err != nil {
-	// 	return err
-	// }
-
-	var errs []error
-
-	srcs, err := g.sources()
-	if err != nil {
-		errs = append(errs, err)
+	if err := g.writeFactory(ctx); err != nil {
+		return err
 	}
 
-	// TODO(kcp-dev): This will cause problems whenever listers don't exist at the expected package path.
-	// Consider something more robust; e.g. a user provided command line argument.
-	baseListersPackage := filepath.Join(srcs.module, g.outputDir, "listers")
-	fmt.Printf("\tlisters: %s\n", baseListersPackage)
-
-	for group, versions := range srcs.apis {
-		for _, version := range versions {
-			for _, api := range kinds {
-				// TODO(kcp): Pipe io.Writers to format and write to disk
-				var out bytes.Buffer
-
-				// TODO(kcp): Pipe io.Writers to prepend header
-				if err := g.writeHeader(&out); err != nil {
-					errs = append(errs, err)
-					continue
-				}
-
-				informergen.Informer{
-					InformerPackage: filepath.Join(g.baseInformersPackage, group, version),
-					ListerPackage:   filepath.Join(baseListersPackage, group, version),
-					API:             api,
-				}
-				t := informergen.NewInformer(
-					&out,
-					version,
-					g.baseInformersPackage,
-					group,
-					version,
-					info.Name,
-				)
-			}
-
-		}
+	if err := g.writeGeneric(ctx); err != nil {
+		return err
 	}
 
 	for _, group := range g.groups() {
 		versions := g.versionsFor(group)
-		for _, version := range versions {
-			var out bytes.Buffer
-			// Assign the pkgs obtained from loading roots to generation context.
-			// TODO: Figure out if controller-tools generation runtime can be used to
-			// wire in instead.
-			ctx.Roots = pkgs
-
-			var collectedAPIs []string
-			for _, root := range pkgs {
-				if typeErr := markers.EachType(ctx.Collector, root, func(info *markers.TypeInfo) {
-					var out bytes.Buffer
-
-					// if not enabled for this type, skip
-					if !clientgen.IsEnabledForMethod(info) {
-						return
-					}
-
-					if err := g.writeHeader(&out); err != nil {
-						root.AddError(err)
-						return
-					}
-
-					t := informergen.NewInformer(
-						&out,
-						version,
-						g.baseInformersPackage,
-						baseListersPackage,
-						group,
-						version,
-						info.Name,
-					)
-
-					if err := t.WriteContent(); err != nil {
-						root.AddError(err)
-						return
-					}
-
-					formatted, err := format.Source(out.Bytes())
-					if err != nil {
-						root.AddError(err)
-						return
-					}
-
-					err = util.WriteContent(formatted, fmt.Sprintf("%ss.go", strings.ToLower(info.Name)), filepath.Join(g.outputDir, "informers", typedPackageName, group, version))
-					if err != nil {
-						root.AddError(err)
-						return
-					}
-
-					collectedAPIs = append(collectedAPIs, info.Name)
-				}); typeErr != nil {
-					return typeErr
-				}
-			}
-
-			var out bytes.Buffer
-			if err := g.writeHeader(&out); err != nil {
-				return err
-			}
-
-			t, err := informergen.NewVersionInterface(&out, version, g.baseInformersPackage, group, version, collectedAPIs)
-			if err != nil {
-				return err
-			}
-
-			if err := t.WriteContent(); err != nil {
-				return err
-			}
-
-			formatted, err := format.Source(out.Bytes())
-			if err != nil {
-				return err
-			}
-		}
-
 		if err := g.writeGroupInterface(ctx, group.String(), versions); err != nil {
-			errs = append(errs, err)
-			continue
+			return err
+		}
+		for _, version := range versions {
+			if err := g.writeGroupVersion(ctx, group.String(), version); err != nil {
+				return err
+			}
+			// if err := g.writeInformer(ctx, group.String(), version); err != nil {
+			// 	return err
+			// }
 		}
 	}
+	return nil
 
-	return loader.MaybeErrList(errs)
+	// TODO(kcp-dev): This will cause problems whenever listers don't exist at the expected package path.
+	// Consider something more robust; e.g. a user provided command line argument.
+	// baseListersPackage := filepath.Join("TODO(KCP)", g.outputDir, "listers")
+	// fmt.Printf("\tlisters: %s\n", baseListersPackage)
+
+	// for _, group := range g.groups() {
+	// 	versions := g.versionsFor(group)
+	// 	for _, version := range versions {
+	// 		var out bytes.Buffer
+	// 		// Assign the pkgs obtained from loading roots to generation context.
+	// 		// TODO: Figure out if controller-tools generation runtime can be used to
+	// 		// wire in instead.
+
+	// 		var collectedAPIs []string
+	// 		for _, root := range ctx.Roots {
+	// 			if typeErr := markers.EachType(ctx.Collector, root, func(info *markers.TypeInfo) {
+	// 				var out bytes.Buffer
+
+	// 				// if not enabled for this type, skip
+	// 				if !clientgen.IsEnabledForMethod(info) {
+	// 					return
+	// 				}
+
+	// 				if err := g.writeHeader(&out); err != nil {
+	// 					root.AddError(err)
+	// 					return
+	// 				}
+
+	// 				t := informergen.NewInformer(
+	// 					&out,
+	// 					version,
+	// 					g.baseInformersPackage,
+	// 					baseListersPackage,
+	// 					group,
+	// 					version,
+	// 					info.Name,
+	// 				)
+
+	// 				if err := t.WriteContent(); err != nil {
+	// 					root.AddError(err)
+	// 					return
+	// 				}
+
+	// 				formatted, err := format.Source(out.Bytes())
+	// 				if err != nil {
+	// 					root.AddError(err)
+	// 					return
+	// 				}
+
+	// 				err = util.WriteContent(formatted, fmt.Sprintf("%ss.go", strings.ToLower(info.Name)), filepath.Join(g.outputDir, "informers", typedPackageName, group, version))
+	// 				if err != nil {
+	// 					root.AddError(err)
+	// 					return
+	// 				}
+
+	// 				collectedAPIs = append(collectedAPIs, info.Name)
+	// 			}); typeErr != nil {
+	// 				return typeErr
+	// 			}
+	// 		}
+
+	// 		var out bytes.Buffer
+	// 		if err := g.writeHeader(&out); err != nil {
+	// 			return err
+	// 		}
+
+	// 		t, err := informergen.NewVersionInterface(&out, version, g.baseInformersPackage, group, version, collectedAPIs)
+	// 		if err != nil {
+	// 			return err
+	// 		}
+
+	// 		if err := t.WriteContent(); err != nil {
+	// 			return err
+	// 		}
+
+	// 		formatted, err := format.Source(out.Bytes())
+	// 		if err != nil {
+	// 			return err
+	// 		}
+	// 	}
+
+	// 	if err := g.writeGroupInterface(ctx, group.String(), versions); err != nil {
+	// 		return err
+	// 	}
+	// }
+
+	return nil
 }
 
 func (g *Generator) writeHeader(out io.Writer) error {
@@ -380,11 +357,9 @@ func (g *Generator) writeFactory(ctx *genall.GenerationContext) error {
 	}
 
 	// TODO needs to know about each group
-	t, err := informergen.NewFactory(&out, "externalversions")
-	if err != nil {
+	if err := informergen.NewFactory("externalversions", "TODO", "TODO").WriteContent(&out); err != nil {
 		return err
 	}
-	t.WriteContent()
 
 	outBytes := out.Bytes()
 	formattedBytes, err := format.Source(outBytes)
@@ -404,14 +379,8 @@ func (g *Generator) writeGeneric(ctx *genall.GenerationContext) error {
 		return err
 	}
 
-	//TODO needs to know about each gvk
-
-	t, err := informergen.NewGeneric(&out, "externalversions")
-	if err != nil {
-		return err
-	}
-
-	if err := t.WriteContent(); err != nil {
+	//TODO
+	if err := informergen.NewGenericInformer("externalversions", []informergen.API{}).WriteContent(&out); err != nil {
 		return err
 	}
 
@@ -429,8 +398,7 @@ func (g *Generator) writeGroupInterface(ctx *genall.GenerationContext, group str
 		return err
 	}
 
-	t := informergen.NewGroupInterface(&out, group, g.baseInformersPackage, group, versions)
-	if err := t.WriteContent(); err != nil {
+	if err := informergen.NewGroupInterface(group, g.baseInformersPackage, group, versions).WriteContent(&out); err != nil {
 		return err
 	}
 
@@ -480,7 +448,7 @@ func (g *Generator) writeGroupVersion(ctx *genall.GenerationContext, group, vers
 	// wire in instead.
 	ctx.Roots = pkgs
 
-	var collectedAPIs []string
+	var collectedAPIs []informergen.API
 	for _, root := range pkgs {
 		if typeErr := markers.EachType(ctx.Collector, root, func(info *markers.TypeInfo) {
 			var out bytes.Buffer
@@ -496,16 +464,17 @@ func (g *Generator) writeGroupVersion(ctx *genall.GenerationContext, group, vers
 			}
 
 			t := informergen.NewInformer(
-				&out,
 				version,
 				g.baseInformersPackage,
 				baseListersPackage,
-				group,
-				version,
-				info.Name,
+				informergen.API{
+					Group:   group,
+					Version: version,
+					Kind:    info.Name,
+				},
 			)
 
-			if err := t.WriteContent(); err != nil {
+			if err := t.WriteContent(&out); err != nil {
 				root.AddError(err)
 				return
 			}
@@ -522,7 +491,11 @@ func (g *Generator) writeGroupVersion(ctx *genall.GenerationContext, group, vers
 				return
 			}
 
-			collectedAPIs = append(collectedAPIs, info.Name)
+			collectedAPIs = append(collectedAPIs, informergen.API{
+				Group:   group,
+				Version: version,
+				Kind:    info.Name,
+			})
 		}); typeErr != nil {
 			return typeErr
 		}
@@ -533,12 +506,7 @@ func (g *Generator) writeGroupVersion(ctx *genall.GenerationContext, group, vers
 		return err
 	}
 
-	t, err := informergen.NewVersionInterface(&out, version, g.baseInformersPackage, group, version, collectedAPIs)
-	if err != nil {
-		return err
-	}
-
-	if err := t.WriteContent(); err != nil {
+	if err := informergen.NewVersionInterface(version, g.baseInformersPackage, group, version, collectedAPIs).WriteContent(&out); err != nil {
 		return err
 	}
 
