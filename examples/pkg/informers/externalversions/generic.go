@@ -22,16 +22,21 @@ limitations under the License.
 package externalversions
 
 import (
-	apimachinerycache "github.com/kcp-dev/apimachinery/pkg/cache"
-	"github.com/kcp-dev/kubernetes/src/k8s.io/client-go/tools/cache"
-	"k8s.io/apimachinery/pkg/runtime/schema"
+	"fmt"
+
+	schema "k8s.io/apimachinery/pkg/runtime/schema"
+	cache "k8s.io/client-go/tools/cache"
+
+	kcpcache "k8s.io/kcp-dev/apimachinery/pkg/cache"
+
+	v1 "TODO/examples/pkg/apis/example/v1"
 )
 
 // GenericInformer is type of SharedIndexInformer which will locate and delegate to other
 // sharedInformers based on type
 type GenericInformer interface {
 	Informer() cache.SharedIndexInformer
-	Lister() apimachinerycache.GenericLister
+	Lister() kcpcache.GenericLister
 }
 
 type genericInformer struct {
@@ -44,13 +49,22 @@ func (f *genericInformer) Informer() cache.SharedIndexInformer {
 	return f.informer
 }
 
-// Lister returns the GenericLister.
-func (f *genericInformer) Lister() apimachinerycache.GenericLister {
-	return example.NewGenericLister(f.Informer().GetIndexer(), f.resource)
+// Lister returns the GenericClusterLister.
+func (f *genericInformer) Lister() kcpcache.GenericClusterLister {
+	return kcpcache.NewGenericClusterLister(f.Informer().GetIndexer(), f.resource)
 }
 
+// ForResource gives generic access to a shared informer of the matching type
+// TODO extend this to unknown resources with a client pool
 func (f *sharedInformerFactory) ForResource(resource schema.GroupVersionResource) (GenericInformer, error) {
 	switch resource {
+	// Group=example, Version=v1
+	case examplev1.SchemeGroupVersion.WithResource("testtypes"):
+		return &genericInformer{resource: resource.GroupResource(), informer: f.Example().V1().TestType().Informer()}, nil
+	case examplev1.SchemeGroupVersion.WithResource("clustertesttypes"):
+		return &genericInformer{resource: resource.GroupResource(), informer: f.Example().V1().ClusterTestType().Informer()}, nil
+
 	}
+
 	return nil, fmt.Errorf("no informer found for %v", resource)
 }

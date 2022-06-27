@@ -57,6 +57,9 @@ type Generator struct {
 	// GroupVersions for whom the clients are to be generated.
 	groupVersions []types.GroupVersions
 
+	// GroupVersionResources contains all the needed APIs to scaffold
+	groupVersionResources map[string]map[string][]string
+
 	// headerText is the header text to be added to generated wrappers.
 	// It is obtained from `--go-header-text` flag.
 	headerText string
@@ -78,7 +81,12 @@ func (g Generator) GetName() string {
 // it calls the custom client genrator to create wrappers. If there are any
 // errors while generating interface wrappers, it prints it out.
 func (g Generator) Run(ctx *genall.GenerationContext, f flag.Flags) error {
-	if err := g.configure(f); err != nil {
+	var err error
+	if err = g.configure(f); err != nil {
+		return err
+	}
+
+	if g.groupVersionResources, err = g.GetGVRs(ctx); err != nil {
 		return err
 	}
 
@@ -97,7 +105,6 @@ func (g *Generator) configure(f flag.Flags) error {
 	}
 
 	g.inputDir = absoluteInputDir
-	g.baseInformersPackage = f.BaseInformersPackage
 	g.outputDir = f.OutputDir
 
 	g.headerText, err = util.GetHeaderText(f.GoHeaderFilePath)
@@ -113,6 +120,53 @@ func (g *Generator) configure(f flag.Flags) error {
 	g.groupVersions = append(g.groupVersions, gvs...)
 
 	return nil
+}
+
+func (g *Generator) GetGVRs(ctx *genall.GenerationContext) (map[string]map[string][]string, error) {
+
+	gvrs := map[string]map[string][]string{}
+
+	for _, gv := range g.groupVersions {
+		group := gv.Group.String()
+		if _, ok := gvrs[group]; !ok {
+			gvrs[group] = map[string][]string{}
+		}
+		for _, packageVersion := range gv.Versions {
+			version := packageVersion.Version.String()
+
+			if _, ok := gvrs[group][version]; !ok {
+				gvrs[group][version] = []string{}
+			}
+
+			abs, err := filepath.Abs(g.inputDir)
+			if err != nil {
+				return nil, err
+			}
+			path := filepath.Join(abs, group, version)
+			pkgs, err := loader.LoadRootsWithConfig(&packages.Config{
+				Mode: packages.NeedModule | packages.NeedTypesInfo,
+			}, path)
+			if err != nil {
+				return nil, err
+			}
+			ctx.Roots = pkgs
+			for _, root := range ctx.Roots {
+				if typeErr := markers.EachType(ctx.Collector, root, func(info *markers.TypeInfo) {
+
+					// if not enabled for this type, skip
+					if !clientgen.IsEnabledForMethod(info) {
+						return
+					}
+					gvrs[group][version] = append(gvrs[group][version], info.Name)
+
+				}); typeErr != nil {
+					return nil, typeErr
+				}
+			}
+		}
+	}
+
+	return gvrs, nil
 }
 
 // firstModule returns the Go Module path of the first non-nil *Package in the given list,
@@ -136,9 +190,9 @@ func (g *Generator) generate(ctx *genall.GenerationContext) error {
 		return err
 	}
 
-	// if err := g.writeGeneric(ctx); err != nil {
-	// 	return err
-	// }
+	if err := g.writeGeneric(ctx); err != nil {
+		return err
+	}
 
 	// for _, group := range g.groups() {
 	// 	versions := g.versionsFor(group)
@@ -272,7 +326,6 @@ func (g *Generator) writeFactory(ctx *genall.GenerationContext) error {
 		return err
 	}
 
-	// TODO needs to know about each group
 	factory := informergen.Factory{
 		OutputPackage:    "TODO",
 		ClientsetPackage: "TODO",
@@ -285,14 +338,12 @@ func (g *Generator) writeFactory(ctx *genall.GenerationContext) error {
 	}
 
 	outBytes := out.Bytes()
-	formattedBytes, err := format.Source(outBytes)
+	formatted, err := format.Source(outBytes)
 	if err != nil {
 		return err
-	} else {
-		outBytes = formattedBytes
 	}
 
-	return util.WriteContent(outBytes, "factory.go", filepath.Join(g.outputDir, "informers", typedPackageName))
+	return util.WriteContent(formatted, "factory.go", filepath.Join(g.outputDir, "informers", typedPackageName))
 }
 
 func (g *Generator) writeGeneric(ctx *genall.GenerationContext) error {
@@ -302,14 +353,20 @@ func (g *Generator) writeGeneric(ctx *genall.GenerationContext) error {
 		return err
 	}
 
-	//TODO
-	if err := informergen.NewGenericInformer("externalversions", []informergen.API{}).WriteContent(&out); err != nil {
+	generic := informergen.Generic{
+		OutputPackage:         "TODO",
+		GroupVersions:         g.groups(),
+		PackageName:           "externalversions",
+		GroupVersionResources: g.groupVersionResources,
+	}
+	if err := generic.WriteContent(&out); err != nil {
 		return err
 	}
 
 	formatted, err := format.Source(out.Bytes())
 	if err != nil {
-		return err
+		// return err
+		formatted = out.Bytes()
 	}
 
 	return util.WriteContent(formatted, "generic.go", filepath.Join(g.outputDir, "informers", typedPackageName))
@@ -327,7 +384,8 @@ func (g *Generator) writeGroupInterface(ctx *genall.GenerationContext, group str
 
 	formatted, err := format.Source(out.Bytes())
 	if err != nil {
-		return err
+		// return err
+		formatted = out.Bytes()
 	}
 
 	return util.WriteContent(formatted, "interface.go", filepath.Join(g.outputDir, "informers", typedPackageName, group))

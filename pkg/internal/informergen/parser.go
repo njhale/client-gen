@@ -37,23 +37,6 @@ type API struct {
 	Package string
 }
 
-type genericInformer struct {
-	PackageName string
-	APIs        []API
-}
-
-func (g *genericInformer) WriteContent(w io.Writer) error {
-	templ, err := template.New("generic").Funcs(templateFuncs).Parse(genericInformerTemplate)
-	if err != nil {
-		return err
-	}
-	return templ.Execute(w, g)
-}
-
-func NewGenericInformer(packageName string, apis []API) *genericInformer {
-	return &genericInformer{APIs: apis, PackageName: packageName}
-}
-
 type groupInterface struct {
 	PackageName     string
 	InformerPackage string
