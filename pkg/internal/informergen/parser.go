@@ -30,24 +30,6 @@ var (
 	}
 )
 
-type factory struct {
-	PackageName               string
-	InformerPackage           string
-	VersionedClientsetPackage string
-}
-
-func (f *factory) WriteContent(w io.Writer) error {
-	templ, err := template.New("factory").Funcs(templateFuncs).Parse(factoryTemplate)
-	if err != nil {
-		return err
-	}
-	return templ.Execute(w, f)
-}
-
-func NewFactory(packageName, informerPackage, versionedClientSetPackage string) *factory {
-	return &factory{PackageName: packageName, InformerPackage: informerPackage, VersionedClientsetPackage: versionedClientSetPackage}
-}
-
 type API struct {
 	Group   string
 	Version string

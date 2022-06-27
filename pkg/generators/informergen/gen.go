@@ -128,66 +128,6 @@ func firstModule(pkgs []*loader.Package) string {
 	return ""
 }
 
-type sources struct {
-	module string
-	apis   map[types.Group][]informergen.API
-}
-
-func (g *Generator) sources(ctx *genall.GenerationContext) (*sources, error) {
-	var errs []error
-	srcs := &sources{
-		apis: map[types.Group][]informergen.API{},
-	}
-
-	for _, group := range g.groups() {
-		for _, version := range g.versionsFor(group) {
-			path := filepath.Join(g.inputDir, group.String(), version)
-			pkgs, err := loader.LoadRootsWithConfig(&packages.Config{
-				Mode: packages.NeedModule | packages.NeedTypesInfo,
-			}, path)
-			if err != nil {
-				errs = append(errs, fmt.Errorf("failed to get packages for: %s/%s", group, version))
-				continue
-			}
-
-			if srcs.module == "" {
-				// All group-versions should be in the same module, so we can memoize the result for all source APIs
-				if srcs.module = firstModule(pkgs); srcs.module == "" {
-					errs = append(errs, fmt.Errorf("failed to find go module for: %s/%s", group, version))
-					continue
-				}
-			}
-
-			// Assign the pkgs obtained from loading roots to generation context.
-			// TODO: Figure out if controller-tools generation runtime can be used to
-			// wire in instead.
-			ctx.Roots = pkgs
-
-			for _, pkg := range pkgs {
-				err = markers.EachType(ctx.Collector, pkg, func(info *markers.TypeInfo) {
-					if !clientgen.IsEnabledForMethod(info) {
-						// Skip types that don't have markers for generating clients
-						return
-					}
-
-					srcs.apis[group] = append(srcs.apis[group], informergen.API{
-						Group:   group.String(),
-						Version: version,
-						Kind:    info.Name,
-					})
-
-				})
-
-				if err != nil {
-					errs = append(errs, err)
-				}
-			}
-		}
-	}
-
-	return srcs, loader.MaybeErrList(errs)
-}
-
 // generate first generates the wrapper for all the interfaces provided in the input.
 // Then for each type defined in the input, it recursively wraps the subsequent
 // interfaces to be kcp-aware.
@@ -196,24 +136,24 @@ func (g *Generator) generate(ctx *genall.GenerationContext) error {
 		return err
 	}
 
-	if err := g.writeGeneric(ctx); err != nil {
-		return err
-	}
+	// if err := g.writeGeneric(ctx); err != nil {
+	// 	return err
+	// }
 
-	for _, group := range g.groups() {
-		versions := g.versionsFor(group)
-		if err := g.writeGroupInterface(ctx, group.String(), versions); err != nil {
-			return err
-		}
-		for _, version := range versions {
-			if err := g.writeGroupVersion(ctx, group.String(), version); err != nil {
-				return err
-			}
-			// if err := g.writeInformer(ctx, group.String(), version); err != nil {
-			// 	return err
-			// }
-		}
-	}
+	// for _, group := range g.groups() {
+	// 	versions := g.versionsFor(group)
+	// 	if err := g.writeGroupInterface(ctx, group.String(), versions); err != nil {
+	// 		return err
+	// 	}
+	// 	for _, version := range versions {
+	// 		if err := g.writeGroupVersion(ctx, group.String(), version); err != nil {
+	// 			return err
+	// 		}
+	// if err := g.writeInformer(ctx, group.String(), version); err != nil {
+	// 	return err
+	// }
+	// }
+	// }
 	return nil
 
 	// TODO(kcp-dev): This will cause problems whenever listers don't exist at the expected package path.
@@ -317,36 +257,12 @@ func (g *Generator) writeHeader(out io.Writer) error {
 	return nil
 }
 
-func (g *Generator) groups() (ret []types.Group) {
-	groups := map[string]types.Group{}
+func (g *Generator) groups() map[string]types.GroupVersions {
+	groups := map[string]types.GroupVersions{}
 	for _, gv := range g.groupVersions {
-		groups[gv.Group.String()] = gv.Group
+		groups[gv.Group.String()] = gv
 	}
-	for _, group := range groups {
-		ret = append(ret, group)
-	}
-	return
-}
-
-func (g *Generator) versionsFor(group types.Group) (versions []string) {
-	visited := map[string]struct{}{}
-	for _, gv := range g.groupVersions {
-		if gv.Group != group || len(gv.Versions) < 1 {
-			// Discard.
-			continue
-		}
-
-		version := gv.Versions[0].Version.String()
-		if _, ok := visited[version]; ok {
-			// We've already visited this version.
-			continue
-		}
-
-		versions = append(versions, version)
-		visited[version] = struct{}{}
-	}
-
-	return
+	return groups
 }
 
 func (g *Generator) writeFactory(ctx *genall.GenerationContext) error {
@@ -357,7 +273,14 @@ func (g *Generator) writeFactory(ctx *genall.GenerationContext) error {
 	}
 
 	// TODO needs to know about each group
-	if err := informergen.NewFactory("externalversions", "TODO", "TODO").WriteContent(&out); err != nil {
+	factory := informergen.Factory{
+		OutputPackage:    "TODO",
+		ClientsetPackage: "TODO",
+		GroupVersions:    g.groups(),
+
+		PackageName: "externalversions",
+	}
+	if err := factory.WriteContent(&out); err != nil {
 		return err
 	}
 
